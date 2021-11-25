@@ -7,13 +7,17 @@ Questo file salva i file di ogni fornitore (nel formato 'FORNITORE/SOTTOCARTELLA
 CSV nella cartella 'dataset'.
 """
 
-ignore_list = ["VISIRUN", "SCANIA"]
+ignore_list = [#"VISIRUN", "SCANIA",
+               'CGTISAT_INFOold', 'TIMBRATURE_ingestioneventhub', 'IP' # different folder structure
+              ]
 dataset = Path("dataset")
 dataset.mkdir(exist_ok=True, parents=True)
 
 def merge_json(path):
     df = pd.DataFrame([])
-    for f in path.glob('*json'):
+    for f in tqdm(sorted(path.glob('*json')),
+                        desc=f"{path.parent.stem}/{path.stem}"
+                 ):
         try:
             df = df.append(pd.read_json(f)) #TODO: da fare meglio, questo permette di aggregare dati come VISIRUN
         except:
@@ -24,7 +28,7 @@ def merge_json(path):
 for fornitore in Path("SEA Data Lake").iterdir():
     if fornitore.name in ignore_list: continue
 
-    for tab in tqdm(sorted(fornitore.iterdir()), desc=fornitore.stem):
+    for tab in fornitore.iterdir():
         if not tab.is_dir(): continue
         output = dataset / f"{fornitore.stem}_{tab.stem}.csv"
         if output.exists(): continue
