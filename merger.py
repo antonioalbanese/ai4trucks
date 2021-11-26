@@ -3,7 +3,7 @@ import pandas as pd
 from pathlib import Path
 
 """
-Questo file salva i file di ogni fornitore (nel formato 'FORNITORE/SOTTOCARTELLA/file.json') in files
+Questo script salva i file di ogni fornitore (nel formato 'FORNITORE/SOTTOCARTELLA/file.json') in files
 CSV nella cartella 'dataset'.
 """
 
