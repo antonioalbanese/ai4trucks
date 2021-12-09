@@ -8,6 +8,7 @@ CSV nella cartella 'dataset'.
 """
 
 ignore_list = [#"VISIRUN", "SCANIA",
+                'MOVIMATICA'
                'CGTISAT_INFOold', 'TIMBRATURE_ingestioneventhub', 'IP' # different folder structure
               ]
 dataset = Path("dataset")
@@ -30,12 +31,14 @@ def merge_json(path):
     return df
 
 for fornitore in Path("SEA Data Lake").iterdir():
-    if fornitore.name != "MOVIMATICA": continue
+    if fornitore.name != "VISIRUN": continue
     if fornitore.name in ignore_list: continue
 
     for tab in fornitore.iterdir():
+        print(tab)
+        if tab.name != "CurrentPosition": continue
         if not tab.is_dir(): continue
         output = dataset / f"{fornitore.stem}_{tab.stem}.csv"
-#         if output.exists(): continue
+        if output.exists(): continue
             
         merge_json(tab).to_csv(output)
