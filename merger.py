@@ -36,7 +36,6 @@ for fornitore in Path("SEA Data Lake").iterdir():
 
     for tab in fornitore.iterdir():
 #         print(tab)
-        if tab.name == "RouteOld": continue
         if not tab.is_dir(): continue
         output = dataset / f"{fornitore.stem}_{tab.stem}.csv"
         if output.exists(): continue
