@@ -31,12 +31,12 @@ def merge_json(path):
     return df
 
 for fornitore in Path("SEA Data Lake").iterdir():
-    if fornitore.name != "VISIRUN": continue
+    if fornitore.name != "SCANIA": continue
     if fornitore.name in ignore_list: continue
 
     for tab in fornitore.iterdir():
-        print(tab)
-        if tab.name != "CurrentPosition": continue
+#         print(tab)
+        if tab.name == "RouteOld": continue
         if not tab.is_dir(): continue
         output = dataset / f"{fornitore.stem}_{tab.stem}.csv"
         if output.exists(): continue
