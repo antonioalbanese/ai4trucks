@@ -16,6 +16,21 @@ pd.options.display.max_columns = 100
 targhe = [
 "FY293YC", "FY295YC", "FY298YC", "FY294YC", "FY296YC", "FV903SK", "FV904SK", "FV906SK", "FV907SK", "FV908SK", "FZ330SC", "FV913SK", "FV914SK", "FY402YC", "FY403YC", "ZB477AN", "ZB473AN", "ZB474AN", "ZB476AN", "ZB475AN", "ZB478AN", "ZB137AR", "ZB139AR", "ZB150AR", "ZB127AR", "ZB132AR", "ZB128AR", "ZB131AR", "ZB130AR", "FY400YC", "ZB135AR", "ZB136AR", "ZB134AR", "ZB373AN", "FY401YC", "CW363HC", "CW367HC", "FP698BP", "FP699BP", "CW365HC", "CW368HC", "CN433CA", "FV989FV", "FV990FV", "FV991FV", "FV995FV", "FV996FV", "FV997FV", "FV992FV", "FV985FV", "FV987FV", "FV988FV", "FV993FV", "FV994FV", "EG181YE", "FV986FV", "EN971TN", "FY299YC", 
 ]
+
+timestamp_names = ["transaction_date", "Data", "creationDate", "position_timestamp", "snapshot_date_time", "PositionDateTime", "StartDate", "dateDay", "datestamp", "timestampCall", "DataTransazione", "start_timestamp"]
+plate_names = ["license_plate", "LicensePlate", "vehiclePlate", "TruckPlate", "Targa", "registration_number"]
+
+veicoli = pd.read_excel("excels/SEA_Flotta_Elenco_Veicoli.xlsx", skiprows=lambda x: x > 341) # il file contiene altre cose dopo
+veicoli = veicoli.drop(veicoli.columns[-5:-2], axis=1)[veicoli.TARGA.isin(targhe)]\
+          .reset_index(drop=True).rename(columns=lambda x: x.strip().replace("\n", " ").title())
+veicoli["plate"] = veicoli.Targa
+
+veicoli["Sistema Gps Tracking"] = veicoli["Sistema Gps Tracking"].str.replace(' ', '').str.split('+')#.unique()
+veicoli = veicoli.explode("Sistema Gps Tracking")#.groupby(['Targa', 'Sistema Gps Tracking']).first()
+
+fatture = pd.read_excel("excels/eventi_manutenzioni_esterne (da fatture).xlsx")
+fatture.Apertura_commessa = pd.to_datetime(fatture.Apertura_commessa)
+
 sns.set_style("whitegrid")
 
 def get_args():
@@ -28,42 +43,50 @@ def get_args():
     
     return parser.parse_args()
 
-def read_data(path):
-    args = ed({"cut_range": True})
+def read_data(path, cut_range=False, drop_duplicates=False):
     df = pd.read_csv(path, index_col=0)
-    df = df[df.plate.isin(targhe)]
     
-    time_cols = [c for c in df.columns if "time".lower() in c or "date" in c.lower()]
-    for c in time_cols:
-        df[c] = pd.to_datetime(df[c], format="%Y-%m-%dT%H:%M:%S%z", utc=True)
-#         df[c] = pd.to_datetime(df[c])
-#     if args.timestamp_name:
-#         df = df.rename(columns={args.timestamp_name: "timestamp"})
-#     else:
-    inferred_ts = {"timestamp", "datestamp", "PositionDate", "transaction_date", "PositionDateTime"}.intersection(df.columns)
-    assert len(inferred_ts) == 1, "Impossibile determinare il nome del timestamp"
-    df = df.rename(columns={inferred_ts[0]: "timestamp"})
-    df.timestamp = pd.to_datetime(df.timestamp)
+    if not "plate" in df.columns:
+        for p in plate_names:
+            if p in df.columns: df["plate"] = df[p]
+    if not "plate" in df.columns and "VIN" in df.columns:
+        df = df.join(VIN_toplate, on="VIN")
     
-#     if args.plate_name:
-#         df = df.rename(columns={args.plate_name: "plate"})
-#     else:
-    inferred_pl = [c for c in df.columns if "plate" in c.lower()]
-    assert len(inferred_pl) == 1, "Impossibile determinare informazioni di targa"
-    df = df.rename(columns={inferred_pl[0]: "plate"})
+    if "plate" in df.columns: df = df[df.plate.isin(targhe)]
+    if len(df) == 0: return None
         
-    if args.cut_range:
-        anomalies = df[df.timestamp < "2021-01-01"]
+    for t in timestamp_names:
+        if t in df.columns: df["timestamp"] = df[t]
+    
+    if "timestamp" in df.columns:
+        df.timestamp = pd.to_datetime(df.timestamp, utc=True).dt.tz_localize(None) #.floor('D')
+#         df.timestamp = pd.to_datetime(df.timestamp.dt.date)
+        
+    if drop_duplicates:
+        if "filename" in df.columns:
+            df = df.drop("filename", axis=1)
+        df = df.drop_duplicates()
+        
+    if cut_range:
+        anomalies = df[df.timestamp < pd.to_datetime("2021-01-01")]
         print(f"Eliminati {len(anomalies)} record anomali antecedenti al 2021 (in date {' '.join(anomalies.timestamp.dt.strftime('%d/%m/%Y').unique())})")
         df = df.drop(anomalies.index)
     
     return df
     
-def overview(df, timestamp="timestamp", plate="plate", fatture=None):
+def overview(df, timestamp="timestamp", plate="plate", fatture=fatture, clear=True):
+    """
+    Restituisce un rassunto del range di date considerato, dei veicoli monitorati e della media delle misurazioni.
+    Con clear=True, restituisce il dataframe escluso dalle colonne con valore singolo e un dizionario con il valore fisso acquisito per ognuna di esse.
+    """
     date_range = (df[timestamp].max() - df[df[timestamp].dt.year==2021][timestamp].min()).days
-    targhe_here = df[plate].unique()
+    targhe_all = len(df[plate].unique())
+    fatture_all = len(fatture[fatture.Targa.isin(df[plate].unique())])
+    
+    df = df[df[plate].isin(targhe)]
+    targhe_cons = len(df[plate].unique())
 
-    daterange = f"Dati raccolti tra {df[df[timestamp].dt.year==2021][timestamp].min().strftime('%m/%Y')} e {df[timestamp].max().strftime('%m/%Y')}"
+    daterange = f"    Dati raccolti tra {df[df[timestamp].dt.year==2021][timestamp].min().strftime('%m/%Y')} e {df[timestamp].max().strftime('%m/%Y')}"
     if (df[timestamp].dt.year!=2021).any(): 
         daterange += " (con alcune eccezioni)\n"
     
@@ -71,18 +94,22 @@ def overview(df, timestamp="timestamp", plate="plate", fatture=None):
     {df.shape[1]} parametri totali monitorati\n\
     {df.shape[0]} record nel datalake\n\
     {(df.drop('filename', axis=1) if 'filename' in df.columns else df).drop_duplicates().shape[0]} record non ripetuti\n\
-    {len(targhe_here)} truck monitorati\n\
-    In media {df.shape[0]/len(targhe_here)} misurazioni per ogni mezzo su 5 mesi\n\
-    In media {df.shape[0]/len(targhe_here)/date_range} misurazioni/giorno/mezzo (dettaglio successivamente)\n\
-    {len(fatture[fatture.Targa.isin(df[plate].unique())])} fatture associate.")
+    {targhe_cons} truck di interesse monitorati\n\
+    In media {df.shape[0]/targhe_cons} misurazioni per ogni mezzo su 5 mesi\n\
+    In media {df.shape[0]/targhe_cons/date_range} misurazioni/giorno/mezzo (dettaglio successivamente)\n\
+    {len(fatture[fatture.Targa.isin(df[plate].unique())])} fatture associate.\n")
     
-    useless_cols = [c for c in df.columns if len(df[c].unique()) <= 1]
-    print("Misurazioni con valore singolo:")
-    print(df[useless_cols].iloc[0,:])
-    df = df.drop(useless_cols, axis=1)
-    print("--> Colonne eliminate")
+    if clear==True:
+        useless_cols = [c for c in df.columns if len(df[c].unique()) <= 1]
+        print("Misurazioni con valore singolo:")
+        print(df[useless_cols].iloc[0,:])
+        uc = df[useless_cols].iloc[0,:]
+        
+        df = df.drop(useless_cols, axis=1)
+        print("--> Colonne eliminate")
+        return df, uc
 
-def plot_date_relplot(df, timestamp="timestamp", plate="Plate"):
+def plot_date_relplot(df, timestamp="timestamp", plate="plate"):
     df["Date"] = df[timestamp].dt.date
     key = df.columns[0]
     df = df.sort_values(by="Date").groupby([plate, "Date"], as_index=False)[key].count()
@@ -100,8 +127,19 @@ def plot_date_relplot(df, timestamp="timestamp", plate="Plate"):
     g._legend.set_title("Samples")
     return g
 
+def draw_correlation(df, figsize=(10,8)):
+    correlations = df.corr()
+
+    fig, ax = plt.subplots(figsize=figsize)
+    mask = np.zeros_like(correlations)
+    mask[np.triu_indices_from(mask)] = True
+    heatmap = sns.heatmap(correlations.iloc[1:,:-1], annot=True, fmt='.2f', linewidths=0.5,
+                mask=mask[1:,:-1], ax=ax, cmap=sns.diverging_palette(10, 150, s=90, n=7),
+                robust=True, vmin=-1)#, annot_kws={"size": 10})
+    plt.tight_layout()
+    return fig
     
-def draw_report(df, timestamp="timestamp", plate="plate", fatture=None, per_day=True):
+def draw_report(df, timestamp="timestamp", plate="plate", fatture=fatture, per_day=True, figsize=(22,9)):
     report = df.groupby(plate).agg({
     timestamp: ["min", "max", 
                 "count", pd.Series.nunique
@@ -122,7 +160,7 @@ def draw_report(df, timestamp="timestamp", plate="plate", fatture=None, per_day=
     else:
         report = report.rename(columns={"count": m1, "nunique": m2})
         
-    fig, ax = plt.subplots(1,4, figsize=(22,9), sharey=True)
+    fig, ax = plt.subplots(1,4, figsize=figsize, sharey=True)
     palette = None
     sns.scatterplot(data=df, x=timestamp, y=plate, palette=palette, ax=ax[0], zorder=3, s=10)
     sns.scatterplot(data=report, x="min", y=plate, palette=palette, ax=ax[0], zorder=4)
