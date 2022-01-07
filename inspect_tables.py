@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import argparse
 from easydict import EasyDict as ed
+from warnings import warn
 
 pd.options.display.max_columns = 100
 
@@ -110,6 +111,10 @@ def overview(df, timestamp="timestamp", plate="plate", fatture=fatture, clear=Tr
         return df, uc
 
 def plot_date_relplot(df, timestamp="timestamp", plate="plate"):
+    warn("'plot_date_relplot' is deprecated, use 'draw_date_relplot' instead", DeprecationWarning, stacklevel=2)
+    return draw_date_relplot(df, timestamp="timestamp", plate="plate")
+    
+def draw_date_relplot(df, timestamp="timestamp", plate="plate"):
     df["Date"] = df[timestamp].dt.date
     key = df.columns[0]
     df = df.sort_values(by="Date").groupby([plate, "Date"], as_index=False)[key].count()
@@ -147,7 +152,8 @@ def draw_report(df, timestamp="timestamp", plate="plate", fatture=fatture, per_d
     }).droplevel(0, axis=1)
 
     report["fatture"] = report.apply(lambda x: fatture[(fatture.Targa==x.name)&(fatture.Apertura_commessa.dt.date>=x['min'].date())&(fatture.Apertura_commessa.dt.date<=x['max'].date())].ID.count(), axis=1)
-    report = report.reset_index()
+    report = report.reset_index().sort_values(by=plate)
+    df = df.sort_values(by=plate)
     
     m1 = "misure"
     m2 = "misure[distinte]"
@@ -175,9 +181,8 @@ def draw_report(df, timestamp="timestamp", plate="plate", fatture=fatture, per_d
     for a in ax:
         a.set_ylabel("")
         a.set_xlabel(a.get_xlabel(), size=17)
-    #     a.grid(False)
-        a.yaxis.grid(False)
         sns.despine(trim=True)
+        a.yaxis.grid("both")
 
     plt.tight_layout()
     plt.close()
