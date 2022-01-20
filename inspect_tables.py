@@ -32,6 +32,8 @@ veicoli = veicoli.explode("Sistema Gps Tracking")#.groupby(['Targa', 'Sistema Gp
 fatture = pd.read_excel("excels/eventi_manutenzioni_esterne (da fatture).xlsx")
 fatture.Apertura_commessa = pd.to_datetime(fatture.Apertura_commessa)
 
+VIN_toplate = veicoli[["Targa", "Telaio"]].drop_duplicates().rename({"Targa": "plate", "Telaio": "VIN"}, axis=1).set_index("VIN")
+
 sns.set_style("whitegrid")
 
 def get_args():
@@ -44,8 +46,8 @@ def get_args():
     
     return parser.parse_args()
 
-def read_data(path, cut_range=False, drop_duplicates=False):
-    df = pd.read_csv(path, index_col=0)
+def read_data(path, cut_range=False, drop_duplicates=False, **kwargs):
+    df = pd.read_csv(path, index_col=0, **kwargs)
     
     if not "plate" in df.columns:
         for p in plate_names:
@@ -73,7 +75,7 @@ def read_data(path, cut_range=False, drop_duplicates=False):
         print(f"Eliminati {len(anomalies)} record anomali antecedenti al 2021 (in date {' '.join(anomalies.timestamp.dt.strftime('%d/%m/%Y').unique())})")
         df = df.drop(anomalies.index)
     
-    return df
+    return df.reset_index(drop=True)
     
 def overview(df, timestamp="timestamp", plate="plate", fatture=fatture, clear=True):
     """
@@ -115,8 +117,9 @@ def plot_date_relplot(df, timestamp="timestamp", plate="plate"):
     return draw_date_relplot(df, timestamp="timestamp", plate="plate")
     
 def draw_date_relplot(df, timestamp="timestamp", plate="plate"):
-    df["Date"] = df[timestamp].dt.date
-    key = df.columns[0]
+    if not "Date" in df.columns:
+        df["Date"] = df[timestamp].dt.date
+    key = df.columns[-2]
     df = df.sort_values(by="Date").groupby([plate, "Date"], as_index=False)[key].count()
     df['c'] = df[key] / df[key].max()
     
@@ -142,7 +145,7 @@ def draw_correlation(df, figsize=(10,8)):
                 mask=mask[1:,:-1], ax=ax, cmap=sns.diverging_palette(10, 150, s=90, n=7),
                 robust=True, vmin=-1)#, annot_kws={"size": 10})
     plt.tight_layout()
-    return fig
+    return ax
     
 def draw_report(df, timestamp="timestamp", plate="plate", fatture=fatture, per_day=True, figsize=(22,9)):
     report = df.groupby(plate).agg({

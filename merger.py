@@ -7,11 +7,13 @@ Questo script salva i file di ogni fornitore (nel formato 'FORNITORE/SOTTOCARTEL
 CSV nella cartella 'dataset'.
 """
 
-ignore_list = [#"VISIRUN", "SCANIA",
-                'MOVIMATICA'
+ignore_list = [#"VISIRUN", "SCANIA", "MOVIMATICA"
                'CGTISAT_INFOold', 'TIMBRATURE_ingestioneventhub', 'IP' # different folder structure
               ]
-dataset = Path("dataset")
+dataset = Path("dataset2")
+# DL_path = Path("SEA Data Lake")
+DL_path = Path("SDL_2")
+
 dataset.mkdir(exist_ok=True, parents=True)
 
 def merge_json(path):
@@ -30,7 +32,7 @@ def merge_json(path):
         
     return df
 
-for fornitore in Path("SEA Data Lake").iterdir():
+for fornitore in DL_path.iterdir():
     if fornitore.name != "SCANIA": continue
     if fornitore.name in ignore_list: continue
 
