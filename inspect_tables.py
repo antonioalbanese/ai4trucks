@@ -63,7 +63,7 @@ def read_data(path, cut_range=False, drop_duplicates=False, **kwargs):
     
     if "timestamp" in df.columns:
         df.timestamp = pd.to_datetime(df.timestamp, utc=True).dt.tz_localize(None) #.floor('D')
-#         df.timestamp = pd.to_datetime(df.timestamp.dt.date)
+        df["date"] = pd.to_datetime(df.timestamp.dt.date)
         
     if drop_duplicates:
         if "filename" in df.columns:
@@ -76,6 +76,7 @@ def read_data(path, cut_range=False, drop_duplicates=False, **kwargs):
         df = df.drop(anomalies.index)
     
     return df.reset_index(drop=True)
+    
     
 def overview(df, timestamp="timestamp", plate="plate", fatture=fatture, clear=True):
     """
@@ -112,20 +113,22 @@ def overview(df, timestamp="timestamp", plate="plate", fatture=fatture, clear=Tr
         print("--> Colonne eliminate")
         return df, uc
 
+    
 def plot_date_relplot(df, timestamp="timestamp", plate="plate"):
     warn("'plot_date_relplot' is deprecated, use 'draw_date_relplot' instead", DeprecationWarning, stacklevel=2)
     return draw_date_relplot(df, timestamp="timestamp", plate="plate")
     
+    
 def draw_date_relplot(df, timestamp="timestamp", plate="plate"):
-    if not "Date" in df.columns:
-        df["Date"] = df[timestamp].dt.date
+    if not "date" in df.columns:
+        df["date"] = df[timestamp].dt.date
     key = df.columns[-2]
-    df = df.sort_values(by="Date").groupby([plate, "Date"], as_index=False)[key].count()
+    df = df.sort_values(by="date").groupby([plate, "date"], as_index=False)[key].count()
     df['c'] = df[key] / df[key].max()
     
     g = sns.relplot(
         data=df,
-        x="Date", y=plate, hue="c", size="c",
+        x="date", y=plate, hue="c", size="c",
         palette="vlag", hue_norm=(-1, 1), edgecolor=".7",
         height=10, sizes=(50, 250), size_norm=(-.2, .8), aspect=1.5
     )
@@ -134,6 +137,7 @@ def draw_date_relplot(df, timestamp="timestamp", plate="plate"):
         t.set_text(int(float(t.get_text())*df[key].max()))
     g._legend.set_title("Samples")
     return g
+
 
 def draw_correlation(df, figsize=(10,8)):
     correlations = df.corr()
@@ -146,6 +150,7 @@ def draw_correlation(df, figsize=(10,8)):
                 robust=True, vmin=-1)#, annot_kws={"size": 10})
     plt.tight_layout()
     return ax
+    
     
 def draw_report(df, timestamp="timestamp", plate="plate", fatture=fatture, per_day=True, figsize=(22,9)):
     report = df.groupby(plate).agg({
@@ -191,6 +196,7 @@ def draw_report(df, timestamp="timestamp", plate="plate", fatture=fatture, per_d
     plt.close()
     return fig
 #     fig.savefig(outdir / "report.png")
+
 
 if __name__ == '__main__':
     args = get_args()
