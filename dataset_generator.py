@@ -120,5 +120,3 @@ def main():
 
     for fornitore, binder in which_data.items():
         data_mov = binder_mov()
-
-
