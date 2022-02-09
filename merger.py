@@ -43,4 +43,4 @@ for fornitore in DL_path.iterdir():
         output = dataset / f"{fornitore.stem}_{tab.stem}.csv"
         if output.exists(): continue
             
-        merge_json(tab).to_csv(output)
+        merge_json(tab).to_csv(output, index=False)
