@@ -47,7 +47,7 @@ def get_args():
     return parser.parse_args()
 
 def read_data(path, cut_range=False, drop_duplicates=False, **kwargs):
-    df = pd.read_csv(path, index_col=0, **kwargs)
+    df = pd.read_csv(path, **kwargs)
     
     if not "plate" in df.columns:
         for p in plate_names:
