@@ -20,7 +20,7 @@ dataset.mkdir(exist_ok=True, parents=True)
 def merge_json(path, output, p=None):
     if output.exists(): return
     df = pd.DataFrame([])
-    suffix = f"*{p}.json" if p is not None else "*json"
+    suffix = f"*-{p}.json" if p is not None else "*json"
     for f in tqdm(sorted(path.glob(suffix)),
                         desc=f"{path.parent.stem}/{path.stem}[{suffix}]"
                  ):
@@ -45,6 +45,9 @@ for fornitore in DL_path.iterdir():
         if "old" in tab.stem.lower(): continue
         if not tab.is_dir(): continue
             
+        full_output = dataset / f"{fornitore.stem}_{tab.stem}.csv"
+        if full_output.exists(): continue
+            
         partitions = set([p.stem.split("-")[-1] for p in tab.iterdir()])
         
         
@@ -53,5 +56,11 @@ for fornitore in DL_path.iterdir():
                                                 p=p
                                                ) for p in partitions)
         
+        full_merged = pd.DataFrame()
+        
+        for df in dataset.glob(f"{fornitore.stem}_{tab.stem}_*"):
+            full_merged = full_merged.append(pd.read_csv(df))
+            
+        full_merged.to_csv(full_output, index=False)
 
 #         merge_json(tab, output, p)
