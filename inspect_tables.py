@@ -46,7 +46,7 @@ def get_args():
     
     return parser.parse_args()
 
-def read_data(path, cut_range=False, drop_duplicates=False, **kwargs):
+def read_data(path, cut_range=False, drop_duplicates=False, verbose=False, **kwargs):
     df = pd.read_csv(path, **kwargs)
     
     if not "plate" in df.columns:
@@ -72,7 +72,8 @@ def read_data(path, cut_range=False, drop_duplicates=False, **kwargs):
         
     if cut_range:
         anomalies = df[df.timestamp < pd.to_datetime("2021-01-01")]
-        print(f"Eliminati {len(anomalies)} record anomali antecedenti al 2021 (in date {' '.join(anomalies.timestamp.dt.strftime('%d/%m/%Y').unique())})")
+        if verbose:
+            print(f"Eliminati {len(anomalies)} record anomali antecedenti al 2021 (in date {' '.join(anomalies.timestamp.dt.strftime('%d/%m/%Y').unique())})")
         df = df.drop(anomalies.index)
     
     return df.reset_index(drop=True)

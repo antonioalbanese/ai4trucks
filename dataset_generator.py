@@ -103,7 +103,7 @@ def failure_list(dt, care_category=False, include_eurom=False):
 
     cat_fatture.Data = pd.to_datetime(cat_fatture.Data)
     cat_fatture.Categoria = cat_fatture.Categoria.astype("category").apply(lambda x: x if x != "Impianto di lubrificazione motore" else "Impianto lubrificazione motore")
-    cat_fatture = cat_fatture[~cat_fatture.Categoria.isin(["?", "Generale"])&(cat_fatture.Tagliando == "No")]
+    cat_fatture = cat_fatture[~cat_fatture.Categoria.isin(["?", "Generale"])&(cat_fatture.Tagliando == "No")&(cat_fatture.Revisione == "No")]
     cat_fatture.Categoria = cat_fatture.Categoria.astype(str)
 
     if include_eurom:
