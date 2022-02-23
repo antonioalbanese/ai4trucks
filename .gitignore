@@ -132,7 +132,12 @@ dmypy.json
 
 # Data directories
 dataset/
+dataset2/
 SEA\ Data\ Lake/
+SDL_2/
+logs/
+Figures/
+excels/old_eventi_manutenzioni_esterne (da fatture).xlsx
 *.sbatch
 *.zip
 *.png

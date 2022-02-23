@@ -120,7 +120,7 @@ def plot_date_relplot(df, timestamp="timestamp", plate="plate"):
     return draw_date_relplot(df, timestamp="timestamp", plate="plate")
     
     
-def draw_date_relplot(df, timestamp="timestamp", plate="plate"):
+def draw_date_relplot(df, timestamp="timestamp", plate="plate", height=8):
     if not "date" in df.columns:
         df["date"] = df[timestamp].dt.date
     key = df.columns[-2]
@@ -131,7 +131,7 @@ def draw_date_relplot(df, timestamp="timestamp", plate="plate"):
         data=df,
         x="date", y=plate, hue="c", size="c",
         palette="vlag", hue_norm=(-1, 1), edgecolor=".7",
-        height=10, sizes=(50, 250), size_norm=(-.2, .8), aspect=1.5
+        height=height, sizes=(3*height, 18*height), size_norm=(-.02*height, .08*height), aspect=1.5
     )
 
     for t in g._legend.get_texts():
