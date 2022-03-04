@@ -1,4 +1,5 @@
 import torch
+import argparse
 from easydict import EasyDict as ed
 from torch import nn
 import pytorch_lightning as pl
@@ -28,8 +29,12 @@ class truckLSTM(pl.LightningModule):
 
 
     def setup(self, stage=None):
-        dataset = get_timeseries()
+        dataset = get_timeseries(limit_plate=self.plates, limit_cat=self.categories)
         
+#         self.train_samples = dataset[~dataset.plate.isin(self.test_set_plates)]
+#         self.test_samples = dataset[dataset.plate.isin(self.test_set_plates)]
+        
+        lim = .8
         self.train_samples = dataset[~dataset.plate.isin(self.test_set_plates)]
         self.test_samples = dataset[dataset.plate.isin(self.test_set_plates)]
     
@@ -96,6 +101,7 @@ hparams = ed(
     dropout = 0.2,
     learning_rate = 0.001,
     seg_len = 30, 
+    hot_period = 7,
     test_set_plates = ["FY402YC", "FY293YC", "ZB132AR", "ZB131AR", "FY401YC", "ZB150AR", "ZB475AN", "ZB477AN"]
 )
 
@@ -103,10 +109,11 @@ from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.loggers.csv_logs import CSVLogger
 
 
-def main():
+def train(plates=None, categories=None):
     seed_everything(1)
     csv_logger = CSVLogger('./logs', name='lstm', version='0'),
 
+    hparams.update({"plates": plates, "categories": categories})
     trainer = Trainer(
         max_epochs=hparams.max_epochs,
         logger=csv_logger,

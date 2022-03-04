@@ -11,8 +11,14 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
 
 idx = pd.IndexSlice
+
+full_categories = ['Impianto frenante', 'Impianto lubrificazione motore',
+                   'Impianto elettrico', 'Meccanica', "Impianto d'alimentazione",
+                   'Impianto di scarico', 'Sensoristica', 'Idraulica'
+                  ]
+
 fornitori = ed(Movimatica={"path": "dataset2/Movimatica_vehicles.csv",
-                           "features": ["odometer", "position_speed", "engineHours"],
+                           "features": ["odometer", "position_speed", "engineHours", "position_ignition"],
                            "agg_funs": ["mean", "std", "min", "max", "count", "median"],
                           },
                Visirun={"path": "dataset2/Visirun_CurrentPosition.csv",
@@ -60,18 +66,24 @@ def binder_dt(f_name, curr_f, debug=False, interpolate=True):
         data_raw = set_offset(data_raw)    
     if f_name == "Visirun":
         data_raw.odometer /= 1e3
-        data_raw.workMinutes /= 60
+        data_raw["engineHours"] = data_raw.workMinutes / 60
+        data_raw = data_raw.drop("workMinutes", axis=1)
+        curr_f.features = [f for f in curr_f.features if f != "workMinutes"] + ["engineHours"]
         
+    agg_features = {feat: curr_f.agg_funs for feat in curr_f.features}
+    agg_features.update({"timestamp": lambda x: x.dt.hour.max() - x.dt.hour.min()})
+    
     df_interpol = data_raw.groupby("plate")\
                     .resample('D')\
-                    .agg({feat: curr_f.agg_funs for feat in curr_f.features})
+                    .agg(agg_features)
     
     # ToDo: In questo caso un giorno di non utilizzo viene segnato come la media del precedente e successivo
     if interpolate:
         for a_f in curr_f.agg_funs:
             for feat in curr_f.features:
-                df_interpol.loc[:, (feat, a_f)] = df_interpol[feat][a_f].fillna(0) if a_f in ["std", "count"]\
-                else df_interpol[feat][a_f].interpolate()
+                if feat in ["odometer", "engineHours"]:
+                    df_interpol.loc[:, (feat, a_f)] = df_interpol[feat][a_f].fillna(0) if a_f in ["std", "count"]\
+                    else df_interpol[feat][a_f].interpolate()
 
     if debug:
         for pl in np.random.choice(data_raw.plate.unique(),
@@ -96,11 +108,12 @@ def binder_dt(f_name, curr_f, debug=False, interpolate=True):
     df_interpol = df_interpol.drop([f for f in df_interpol.columns if '_count' in f],
                                   axis=1)
     
-    df_interpol["daydistance"] = df_interpol.groupby("plate").odometer_mean.diff()
-    for worktime in ["workMinutes", "engineHours"]:
-        if worktime in curr_f.features:
-            df_interpol["dayusage"] = df_interpol.groupby("plate")[f"{worktime}_mean"].diff()
-    
+    df_interpol["daydistance"] = df_interpol.odometer_max - df_interpol.odometer_min
+#     for worktime in ["workMinutes", "engineHours"]:
+    if "engineHours" in curr_f.features:
+        df_interpol["dayusage"] = df_interpol.engineHours_max - df_interpol.engineHours_min
+        
+    df_interpol = df_interpol.rename(columns={"timestamp_<lambda>": "sampled_timerange"})
     return df_interpol
 
 
@@ -162,18 +175,27 @@ def failure_list(dt, care_category=True, include_eurom=False, verbose=False):
     return kept_fatture.reset_index()
 
     
-def get_timeseries(dt=20, hot_period=7, int_idx=True, single_class=True, verbose=False):
+def get_timeseries(dt=20, hot_period=7, int_idx=True, single_class=True, verbose=False, limit_plate=None, limit_cat=None):
     '''
     time_window of the Dataset obj should be the same of dt, but in this way we would miss too many failures
     '''
     
     cat_fatture = failure_list(dt)
+    if limit_cat:
+        single_class = False
+        if type(limit_cat) == str: limit_cat = [limit_cat]
+        cat_fatture = cat_fatture[cat_fatture.Categoria.isin(limit_cat)]
+        
+    
     dataset = pd.DataFrame()
     for f_name, curr_f in fornitori.items():
-        if f_name != 'Visirun': continue
+        if f_name != 'Movimatica': continue
            
-        print(f"  📂  Loading '{f_name}...'")
+        print(f"  📂  Loading '{f_name}'...")
         data = binder_dt(f_name, curr_f, debug=verbose)
+        if limit_plate is not None:
+            data = data.loc[(limit_plate, slice(None)), :]
+            
         data = data.assign(**{cat : 0. for cat in cat_fatture.Categoria.unique()})
         # what if a plate is already present?? (better to interpolate instead of just append)
         for i, row in cat_fatture.iterrows():
@@ -185,11 +207,9 @@ def get_timeseries(dt=20, hot_period=7, int_idx=True, single_class=True, verbose
         dataset = dataset.append(data)
 
     if single_class: 
-        dataset = dataset.drop(['Impianto frenante', 'Impianto lubrificazione motore',
-                                'Impianto elettrico', 'Meccanica', "Impianto d'alimentazione",
-                                'Impianto di scarico', 'Sensoristica', 'Idraulica'], 
+        dataset = dataset.drop(full_categories, 
                                axis=1)
-        
+    
     if verbose:
         print(f"Dataset has {len(dataset)} time series")
     
