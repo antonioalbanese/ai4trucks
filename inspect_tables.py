@@ -2,6 +2,7 @@
 # AV = AutoViz_Class()
 
 import numpy as np
+from easydict import EasyDict as ed
 from tqdm import tqdm
 import pandas as pd
 from pathlib import Path
@@ -46,7 +47,7 @@ def get_args():
     
     return parser.parse_args()
 
-def read_data(path, cut_range=False, drop_duplicates=False, verbose=False, **kwargs):
+def read_data(path, cut_range=True, drop_duplicates=False, clear_useless=True, verbose=False, **kwargs):
     df = pd.read_csv(path, **kwargs)
     
     if not "plate" in df.columns:
@@ -76,10 +77,21 @@ def read_data(path, cut_range=False, drop_duplicates=False, verbose=False, **kwa
             print(f"Eliminati {len(anomalies)} record anomali antecedenti al 2021 (in date {' '.join(anomalies.timestamp.dt.strftime('%d/%m/%Y').unique())})")
         df = df.drop(anomalies.index)
     
+    if clear_useless == True:
+        useless_cols = [c for c in df.columns if len(df[c].unique()) <= 1]
+        if verbose:
+            print("Misurazioni con valore singolo:")
+            print(df[useless_cols].iloc[0,:])
+            print("--> Colonne eliminate")
+            
+        uc = df[useless_cols].iloc[0,:]
+        df = df.drop(useless_cols, axis=1)
+#         return df.reset_index(drop=True), uc
+
     return df.reset_index(drop=True)
     
     
-def overview(df, timestamp="timestamp", plate="plate", fatture=fatture, clear=True):
+def overview(df, timestamp="timestamp", plate="plate", fatture=fatture, clear=True, print_ov=True):
     """
     Restituisce un rassunto del range di date considerato, dei veicoli monitorati e della media delle misurazioni.
     Con clear=True, restituisce il dataframe escluso dalle colonne con valore singolo e un dizionario con il valore fisso acquisito per ognuna di esse.
@@ -95,24 +107,31 @@ def overview(df, timestamp="timestamp", plate="plate", fatture=fatture, clear=Tr
     if (df[timestamp].dt.year!=2021).any(): 
         daterange += " (con alcune eccezioni)\n"
     
-    print(f"{daterange}\n\
-    {df.shape[1]} parametri totali monitorati\n\
-    {df.shape[0]} record nel datalake\n\
-    {(df.drop('filename', axis=1) if 'filename' in df.columns else df).drop_duplicates().shape[0]} record non ripetuti\n\
-    {targhe_cons} truck di interesse monitorati\n\
-    In media {df.shape[0]/targhe_cons} misurazioni per ogni mezzo su 5 mesi\n\
-    In media {df.shape[0]/targhe_cons/date_range} misurazioni/giorno/mezzo (dettaglio successivamente)\n\
-    {len(fatture[fatture.Targa.isin(df[plate].unique())])} fatture associate.\n")
+    distinct_s = (df.drop('filename', axis=1) if 'filename' in df.columns else df).drop_duplicates().shape[0]
+    ov = ed({
+        "date": daterange,
+        "features": df.shape[1],
+        "samples": df.shape[0],
+        "distinct_samples": distinct_s,
+        "targhe": targhe_cons,
+        "samples/truck": distinct_s/targhe_cons,
+        "samples/day/truck": distinct_s/targhe_cons/date_range,
+        "fatture": len(fatture[fatture.Targa.isin(df[plate].unique())]),
+    })
     
-    if clear==True:
-        useless_cols = [c for c in df.columns if len(df[c].unique()) <= 1]
-        print("Misurazioni con valore singolo:")
-        print(df[useless_cols].iloc[0,:])
-        uc = df[useless_cols].iloc[0,:]
-        
-        df = df.drop(useless_cols, axis=1)
-        print("--> Colonne eliminate")
-        return df, uc
+    
+    if print_ov:
+        print(f"{ov.date}\n\
+        {ov.features} parametri totali monitorati\n\
+        {ov.samples} record nel datalake\n\
+        {ov.distinct_samples} record non ripetuti\n\
+        {ov.targhe} truck di interesse monitorati\n\
+        In media {ov['samples/truck']} misurazioni per ogni mezzo su 5 mesi\n\
+        In media {ov['samples/day/truck']} misurazioni/giorno/mezzo (dettaglio successivamente)\n\
+        {ov.fatture} fatture associate.\n")
+    
+    
+    return ov
 
     
 def plot_date_relplot(df, timestamp="timestamp", plate="plate"):
