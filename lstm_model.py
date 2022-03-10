@@ -29,14 +29,17 @@ class truckLSTM(pl.LightningModule):
 
 
     def setup(self, stage=None):
-        dataset = get_timeseries(limit_plate=self.plates, limit_cat=self.categories)
+        dataset = get_timeseries(dt=10, hot_period=self.hot_period,
+                                 limit_plate=self.plates,
+                                 limit_cat=self.categories
+                                )
         
 #         self.train_samples = dataset[~dataset.plate.isin(self.test_set_plates)]
 #         self.test_samples = dataset[dataset.plate.isin(self.test_set_plates)]
         
-        lim = .8
-        self.train_samples = dataset[~dataset.plate.isin(self.test_set_plates)]
-        self.test_samples = dataset[dataset.plate.isin(self.test_set_plates)]
+        lim = 32
+        self.train_samples = dataset[dataset.date < dataset.date.max() - lim]
+        self.test_samples = dataset[dataset.date >= dataset.date.max() - lim]
     
     def train_dataloader(self):
         train_dataset = FailureDataset(self.train_samples)
@@ -50,7 +53,7 @@ class truckLSTM(pl.LightningModule):
     def val_dataloader(self):
         val_dataset = FailureDataset(self.test_samples)
         return DataLoader(val_dataset,
-                          batch_size = self.batch_size, 
+                          batch_size = 1, 
                           shuffle = False, 
                           num_workers = 4,
                           drop_last=True
@@ -111,7 +114,7 @@ from pytorch_lightning.loggers.csv_logs import CSVLogger
 
 def train(plates=None, categories=None):
     seed_everything(1)
-    csv_logger = CSVLogger('./logs', name='lstm', version='0'),
+    csv_logger = CSVLogger('./logs', name=f'lstm_{plates}_{categories}', version='0'),
 
     hparams.update({"plates": plates, "categories": categories})
     trainer = Trainer(
@@ -119,6 +122,7 @@ def train(plates=None, categories=None):
         logger=csv_logger,
         gpus=1 if torch.cuda.is_available() else 0,
         precision=16 if torch.cuda.is_available() else 32,
+        log_every_n_steps=1,
     )
 
     model = truckLSTM(hparams)
@@ -126,4 +130,4 @@ def train(plates=None, categories=None):
     
     
 if __name__ == '__main__':
-    main()
+    train(foo)

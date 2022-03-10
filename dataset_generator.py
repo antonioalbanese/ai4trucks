@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 import argparse
+import re
 
 import torch
 from torch.utils.data import Dataset
@@ -12,9 +13,10 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
 idx = pd.IndexSlice
 
-full_categories = ['Impianto frenante', 'Impianto lubrificazione motore',
-                   'Impianto elettrico', 'Meccanica', "Impianto d'alimentazione",
-                   'Impianto di scarico', 'Sensoristica', 'Idraulica'
+full_categories = ['Impianto frenante', 'Impianto elettrico',
+                   'Impianto lubrificazione motore', 'Meccanica', 'Idraulica',
+                   "Impianto d'alimentazione", 'Impianto di scarico', 'Sensoristica',
+                   'Impianto di raffreddamento', 'nan'
                   ]
 
 fornitori = ed(Movimatica={"path": "dataset2/Movimatica_vehicles.csv",
@@ -48,7 +50,21 @@ def set_offset(df):
         d_all[d_all.plate==pl] = d
     return d_all
 
-def binder_dt(f_name, curr_f, debug=False, interpolate=True):
+
+def list_correlated(df, thr=.85):
+    corr = df.corr().fillna(0)
+    keep = np.triu(np.ones_like(corr), 1).astype('bool').reshape(corr.size)
+    melt = corr.stack()[keep]
+    
+    featured = set()
+    for c in melt.index.get_level_values(0).unique():
+        if c in featured: continue
+        tmp = melt.xs(c)
+        featured.update(tmp[tmp>thr].index.to_list())
+    return featured
+    
+
+def binder_dt(f_name, curr_f, debug=False, interpolate=True, get_diff=True):
     data_raw = read_data(curr_f.path,
                          cut_range=True,
                          low_memory=False
@@ -68,6 +84,8 @@ def binder_dt(f_name, curr_f, debug=False, interpolate=True):
         data_raw.odometer /= 1e3
         data_raw["engineHours"] = data_raw.workMinutes / 60
         data_raw = data_raw.drop("workMinutes", axis=1)
+        
+        old_feats = curr_f.features # it can be done better
         curr_f.features = [f for f in curr_f.features if f != "workMinutes"] + ["engineHours"]
         
     agg_features = {feat: curr_f.agg_funs for feat in curr_f.features}
@@ -114,6 +132,13 @@ def binder_dt(f_name, curr_f, debug=False, interpolate=True):
         df_interpol["dayusage"] = df_interpol.engineHours_max - df_interpol.engineHours_min
         
     df_interpol = df_interpol.rename(columns={"timestamp_<lambda>": "sampled_timerange"})
+    
+    if get_diff:
+        for feat in [c for c in df_interpol.columns if re.match("(odometer|engineHours)_(mean|median|max|min)", c)]:
+            df_interpol[feat] = df_interpol.groupby("plate")[feat].diff()
+    
+    if f_name == "Visirun":
+        curr_f.features = old_feats
     return df_interpol
 
 
@@ -175,7 +200,7 @@ def failure_list(dt, care_category=True, include_eurom=False, verbose=False):
     return kept_fatture.reset_index()
 
     
-def get_timeseries(dt=20, hot_period=7, int_idx=True, single_class=True, verbose=False, limit_plate=None, limit_cat=None):
+def get_timeseries(dt=20, hot_period=7, int_idx=True, single_class=True, verbose=False, keep_rul=False, limit_provider="Movimatica", limit_plate=None, limit_cat=None):
     '''
     time_window of the Dataset obj should be the same of dt, but in this way we would miss too many failures
     '''
@@ -186,23 +211,27 @@ def get_timeseries(dt=20, hot_period=7, int_idx=True, single_class=True, verbose
         if type(limit_cat) == str: limit_cat = [limit_cat]
         cat_fatture = cat_fatture[cat_fatture.Categoria.isin(limit_cat)]
         
-    
+    if type(limit_provider) == str: limit_provider = [limit_provider]
+    correlated_f = set()
     dataset = pd.DataFrame()
     for f_name, curr_f in fornitori.items():
-        if f_name != 'Movimatica': continue
+        if f_name not in limit_provider: continue
            
         print(f"  📂  Loading '{f_name}'...")
         data = binder_dt(f_name, curr_f, debug=verbose)
         if limit_plate is not None:
             data = data.loc[(limit_plate, slice(None)), :]
+            print(f"Only considering ({limit_plate if limit_plate is not None else 'Any'}, {limit_cat if limit_cat is not None else 'Any'})")
             
+        correlated_f.update(list_correlated(data))
+        
         data = data.assign(**{cat : 0. for cat in cat_fatture.Categoria.unique()})
         # what if a plate is already present?? (better to interpolate instead of just append)
         for i, row in cat_fatture.iterrows():
             if (row.Targa, row.Data) in data.index:
                 data.loc[(row.Targa, row.Data), row.Categoria] = 1.
         
-        data["any_failure"] = data[np.array(cat_fatture.Categoria.unique())].sum(axis=1).gt(0).astype(float)
+        data["any_failure"] = data[cat_fatture.Categoria.unique()].sum(axis=1).gt(0).astype(float)
         
         dataset = dataset.append(data)
 
@@ -212,23 +241,24 @@ def get_timeseries(dt=20, hot_period=7, int_idx=True, single_class=True, verbose
     
     if verbose:
         print(f"Dataset has {len(dataset)} time series")
+        print(f"{len(correlated_f)} features are excluded because too correlated with others ({correlated_f})")
     
     dataset = dataset.reset_index()
+    dataset.date = dataset.date.factorize()[0]
     
     # Todo: customize for specific failure category
-    dataset["attended_failure"] = 0.
-    for i in dataset[dataset.any_failure == 1].index:
-        dataset.loc[idx[i-hot_period+1:i], "attended_failure"] = 1.
-        
-    dataset.date = dataset.date.factorize()[0]
-#     dataset.plate = dataset.plate.factorize()[0]
-    
     # RUL
     dataset = dataset.assign(RUL = dataset[dataset.any_failure == 1].date)
     dataset["RUL"] = dataset.RUL.fillna(method="bfill") - dataset.date
+    dataset["attended_failure"] = dataset.RUL.lt(hot_period).astype(int)
+    
     dataset = dataset.drop(dataset[(dataset.RUL < 0)|dataset.RUL.isna()].index) # removing samples with no failure after
     
-    return dataset
+    drop_cols = full_categories + ['any_failure'] + list(correlated_f)
+    if not keep_rul:
+        drop_cols += ["RUL"]
+    
+    return dataset[(c for c in dataset.columns if c not in drop_cols)]
 
 
 class FailureDataset(Dataset):
@@ -237,7 +267,7 @@ class FailureDataset(Dataset):
         Takes as input a dataframe with the last column as label, X features are un-normalized.
         """
         self.sequence_length = sequence_length
-        sequence_cols = data.columns.difference(['plate', 'date', 'any_failure', 'RUL'] + [label_col] + removed_cols)
+        sequence_cols = data.columns.difference(['plate', 'date'] + [label_col] + removed_cols)
         self.X_values = []
         self.y_values = []
         for pl in data.plate.unique():
@@ -247,7 +277,6 @@ class FailureDataset(Dataset):
             for i, f in zip(range(0, n_el-sequence_length), range(sequence_length, n_el)):
                 self.X_values += [data_array[i:f, :]]
                 self.y_values += [label_array[f]]
-                # REALLY?
 
         self.X_values = torch.Tensor(self.X_values)
         self.y_values = torch.Tensor(self.y_values).unsqueeze(1)
