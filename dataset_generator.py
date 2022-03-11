@@ -245,6 +245,7 @@ def get_timeseries(dt=20, hot_period=7, int_idx=True, single_class=True, verbose
     
     dataset = dataset.reset_index()
     dataset.date = dataset.date.factorize()[0]
+    dataset.plate = dataset.plate.factorize()[0]
     
     # Todo: customize for specific failure category
     # RUL
@@ -258,20 +259,27 @@ def get_timeseries(dt=20, hot_period=7, int_idx=True, single_class=True, verbose
     if not keep_rul:
         drop_cols += ["RUL"]
     
-    return dataset[(c for c in dataset.columns if c not in drop_cols)]
+    return dataset[(c for c in dataset.columns if c not in drop_cols)].fillna(0)
 
 
 class FailureDataset(Dataset):
-    def __init__(self, data, sequence_length=30, label_col="attended_failure", removed_cols=[None]):
+    def __init__(self, data, sequence_length=30, label_col="attended_failure"):
         """
         Takes as input a dataframe with the last column as label, X features are un-normalized.
         """
+        assert data.notna().any().any()
         self.sequence_length = sequence_length
-        sequence_cols = data.columns.difference(['plate', 'date'] + [label_col] + removed_cols)
+        sequence_cols = data.columns.difference(['plate', 'date'] + [label_col])
         self.X_values = []
         self.y_values = []
+        
+        data_norm = pd.DataFrame(MinMaxScaler().fit_transform(data[sequence_cols].values),
+                                  columns=sequence_cols,
+                                  index=data.index)
+        data = data[data.columns.difference(sequence_cols)].join(data_norm)
+
         for pl in data.plate.unique():
-            data_array = MinMaxScaler().fit_transform(data[data.plate == pl][sequence_cols].values)
+            data_array = data[data.plate == pl].drop(label_col, axis=1).values
             label_array = data[data.plate == pl][label_col].values
             n_el = data_array.shape[0]
             for i, f in zip(range(0, n_el-sequence_length), range(sequence_length, n_el)):
@@ -299,54 +307,3 @@ class FailureDataset(Dataset):
         return (self.X_values[index],
                 self.y_values[index]
                )
-
-
-# def get_timeseries_old(dt=30, verbose=False):
-#     # -------------------- #
-#     # Parameter definition #
-#     which_data = {
-#         "movimatica": binder_mov,
-#     }
-#     agg_funs = ["mean", "std", "min", "max", "count", "median"]
-#     # -------------------- #
-    
-#     cat_fatture = failure_list(dt)
-
-#     dataset = []
-#     for f_name, curr_f in fornitori.items():
-#         data_proc = binder_dt(f_name, curr_f, debug=verbose)
-        
-#         for i, row in cat_fatture.iterrows():
-#             if row.Targa in data_mov.index.get_level_values(0):
-#                 series = data_mov.xs(row.Targa, level=0).truncate(row.Data - pd.Timedelta(days=dt-1), row.Data)
-#                 dataset.append({
-#                     "time_series": series.assign(failure=(series.index == row.Data).astype(int)),
-#                     "Categoria": row.Categoria,
-#                     "Targa": row.Targa,
-#                     "ID": row.ID,
-#                     "Revisione": row.Revisione,
-#                     "Tagliando": row.Tagliando,
-#                     "Componente": row.Componente,
-#                     "Manutenzione": row.Manutenzione,
-#                     "Fornitore": fornitore,
-#                 })
-
-#     if verbose:
-#         print(f"Dataset has {len(dataset)} time series")
-    
-#     return dataset
-        
-#         # Feature engineering
-
-
-
-
-# # Data Labeling - generate column RUL (Remaining Useful Life)
-# rul = dataset.groupby('id')['cycle'].max().reset_index()
-# rul.columns = ['id', 'max']
-# train_df = train_df.merge(rul, on=['id'], how='left')
-# train_df['RUL'] = train_df['max'] - train_df['cycle']
-# train_df.drop('max', axis=1, inplace=True)
-# train_df.head()
-
-
