@@ -5,6 +5,7 @@ import numpy as np
 from tqdm import tqdm
 import argparse
 import re
+import json
 
 import torch
 from torch.utils.data import Dataset
@@ -200,7 +201,7 @@ def failure_list(dt, care_category=True, include_eurom=False, verbose=False):
     return kept_fatture.reset_index()
 
     
-def get_timeseries(dt=20, hot_period=7, int_idx=True, single_class=True, verbose=False, keep_rul=False, limit_provider="Movimatica", limit_plate=None, limit_cat=None):
+def get_timeseries(dt=20, hot_period=7, int_idx=True, single_class=True, verbose=False, use_rul=False, limit_provider="Movimatica", limit_plate=None, limit_cat=None):
     '''
     time_window of the Dataset obj should be the same of dt, but in this way we would miss too many failures
     '''
@@ -245,7 +246,10 @@ def get_timeseries(dt=20, hot_period=7, int_idx=True, single_class=True, verbose
     
     dataset = dataset.reset_index()
     dataset.date = dataset.date.factorize()[0]
-    dataset.plate = dataset.plate.factorize()[0]
+    
+    with open("plates_name.json", "r") as f:
+        rosetta = json.load(f)
+    dataset.plate = dataset.plate.apply(lambda x: int(rosetta[x][1:]))
     
     # Todo: customize for specific failure category
     # RUL
@@ -256,7 +260,9 @@ def get_timeseries(dt=20, hot_period=7, int_idx=True, single_class=True, verbose
     dataset = dataset.drop(dataset[(dataset.RUL < 0)|dataset.RUL.isna()].index) # removing samples with no failure after
     
     drop_cols = full_categories + ['any_failure'] + list(correlated_f)
-    if not keep_rul:
+    if use_rul:
+        drop_cols += ["attended_failure"]
+    else:
         drop_cols += ["RUL"]
     
     return dataset[(c for c in dataset.columns if c not in drop_cols)].fillna(0)
