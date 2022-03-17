@@ -201,7 +201,7 @@ def failure_list(dt, care_category=True, include_eurom=False, verbose=False):
     return kept_fatture.reset_index()
 
     
-def get_timeseries(dt=20, hot_period=7, int_idx=True, single_class=True, verbose=False, use_rul=False, limit_provider="Movimatica", limit_plate=None, limit_cat=None):
+def get_timeseries(dt=20, hot_period=7, single_class=True, verbose=False, use_rul=False, limit_provider="Movimatica", limit_plate=None, limit_cat=None):
     '''
     time_window of the Dataset obj should be the same of dt, but in this way we would miss too many failures
     '''
@@ -245,14 +245,14 @@ def get_timeseries(dt=20, hot_period=7, int_idx=True, single_class=True, verbose
         print(f"{len(correlated_f)} features are excluded because too correlated with others ({correlated_f})")
     
     dataset = dataset.reset_index()
-    dataset.date = dataset.date.factorize()[0]
     
+    dataset.date = dataset.date.factorize()[0]
     with open("plates_name.json", "r") as f:
         rosetta = json.load(f)
     dataset.plate = dataset.plate.apply(lambda x: int(rosetta[x][1:]))
+    dataset = dataset.sort_values(by=["plate", "date"]).reset_index(drop=True)
     
     # Todo: customize for specific failure category
-    # RUL
     dataset = dataset.assign(RUL = dataset[dataset.any_failure == 1].date)
     dataset["RUL"] = dataset.RUL.fillna(method="bfill") - dataset.date
     dataset["attended_failure"] = dataset.RUL.lt(hot_period).astype(int)
@@ -265,6 +265,8 @@ def get_timeseries(dt=20, hot_period=7, int_idx=True, single_class=True, verbose
     else:
         drop_cols += ["RUL"]
     
+    
+#     drop_cols += ["plate", "date"] # This is ok, but keep odom or engH as lifecycle (in the case normalized)
     return dataset[(c for c in dataset.columns if c not in drop_cols)].fillna(0)
 
 
@@ -275,17 +277,21 @@ class FailureDataset(Dataset):
         """
         assert data.notna().any().any()
         self.sequence_length = sequence_length
-        sequence_cols = data.columns.difference(['plate', 'date'] + [label_col])
+        
+        data['cycle_norm'] = data.date.copy()
+        sequence_cols = data.columns.difference(["plate", "date", label_col])
+        # add cycle norm? Can be time, full odom or engineHour
         self.X_values = []
         self.y_values = []
         
         data_norm = pd.DataFrame(MinMaxScaler().fit_transform(data[sequence_cols].values),
                                   columns=sequence_cols,
                                   index=data.index)
-        data = data[data.columns.difference(sequence_cols)].join(data_norm)
+        j_data = data[data.columns.difference(sequence_cols)].join(data_norm)
+        data = j_data.reindex(columns=data.columns).sort_values(['plate','date'])
 
         for pl in data.plate.unique():
-            data_array = data[data.plate == pl].drop(label_col, axis=1).values
+            data_array = data[data.plate == pl][sequence_cols].values
             label_array = data[data.plate == pl][label_col].values
             n_el = data_array.shape[0]
             for i, f in zip(range(0, n_el-sequence_length), range(sequence_length, n_el)):
