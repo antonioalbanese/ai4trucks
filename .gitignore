@@ -136,6 +136,7 @@ dataset2/
 SEA\ Data\ Lake/
 SDL_2/
 logs/
+wandb/
 Figures/
 excels/old_eventi_manutenzioni_esterne (da fatture).xlsx
 *.sbatch

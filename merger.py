@@ -12,8 +12,8 @@ ignore_list = [#"VISIRUN", "SCANIA", "MOVIMATICA"
                'CGTISAT_INFOold', 'TIMBRATURE_ingestioneventhub', 'IP' # different folder structure
               ]
 dataset = Path("dataset2")
-# DL_path = Path("SEA Data Lake")
-DL_path = Path("SDL_2")
+DL_path = Path("SEA Data Lake")
+# DL_path = Path("SDL_2")
 
 dataset.mkdir(exist_ok=True, parents=True)
 
@@ -41,7 +41,7 @@ for fornitore in DL_path.iterdir():
     if fornitore.name in ignore_list: continue
 
     for tab in fornitore.iterdir():
-        if tab.name != "CurrentPosition": continue
+        if tab.name != "Route": continue
         if "old" in tab.stem.lower(): continue
         if not tab.is_dir(): continue
             
@@ -49,6 +49,10 @@ for fornitore in DL_path.iterdir():
         if full_output.exists(): continue
             
         partitions = set([p.stem.split("-")[-1] for p in tab.iterdir()])
+        print(partitions)
+        ciao
+        if len(partitions) < 2:
+            partitions = set(["-".join(p.stem.split("-")[-2:]) for p in tab.iterdir()])
         
         
         Parallel(n_jobs=16)(delayed(merge_json)(tab, 
