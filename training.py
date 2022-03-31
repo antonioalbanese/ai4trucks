@@ -1,5 +1,6 @@
 from comet_ml import Experiment, get_config
-from pytorch_lightning.loggers import CometLogger
+from pytorch_lightning.loggers import CometLogger, WandbLogger
+import wandb
 from pytorch_lightning.loggers.csv_logs import CSVLogger
 
 import argparse
@@ -10,8 +11,11 @@ from pytorch_lightning import LightningModule, Trainer, seed_everything
 
 from dataset_generator import get_timeseries
 from lstm_model import truckLSTM
+from dataset_generator import get_timeseries
 
 from joblib import Parallel, delayed
+from tqdm import tqdm
+from evaluation import evaluate
 
 
 def parse_args():
@@ -25,16 +29,16 @@ def parse_args():
 
 hparams = ed(
     batch_size = 4, 
-    max_epochs = 50,
+    max_epochs = 30,
     hidden_size = 100,
     num_layers = 2,
     dropout = 0.2,
-    learning_rate = 0.001,
+    learning_rate = 1e-2,
     dt=10,
     seg_len = 30,
     hot_period = 7,
-    provider = 'Movimatica',
-    task = 'classification', #/regression
+    provider = 'Visirun',
+    task = 'regression', #/regression
     test_set_plates = ["FY402YC", "FY293YC", "ZB132AR", "ZB131AR", "FY401YC", "ZB150AR", "ZB475AN", "ZB477AN"]
 )
 
@@ -45,18 +49,10 @@ def train(hparams):
     for f in (hparams.plates, hparams.categories):
         if f is not None:
             mod_name = f"{mod_name}_{f}"
-#     csv_logger = CSVLogger('./logs', name=mod_name, version='v0')
+
     
-    experiment = Experiment(
-        api_key="guqtwioseJmdXw2iMRtTuxaIn",
-        project_name="ai4trucks",
-    )
-    comet_logger = CometLogger(
-        api_key="guqtwioseJmdXw2iMRtTuxaIn",
-        project_name="ai4trucks",
-    )
-    
-    dataset = get_timeseries(dt=hparams.dt, hot_period=hparams.hot_period,
+    dataset = get_timeseries(dt=hparams.dt, 
+                             hot_period=hparams.hot_period,
                              limit_plate=hparams.plates,
                              limit_cat=hparams.categories, 
                              use_rul=True if args.task=="regression" else False,
@@ -65,17 +61,46 @@ def train(hparams):
 
     
     model = truckLSTM(hparams, dataset)
-    experiment.set_model_graph(str(model))
+    
+    #     csv_logger = CSVLogger('./logs', name=mod_name, version='v0')
+    
+    logger = WandbLogger(project="ai4trucks",
+                         entity="smonaco", config=hparams,
+                         settings=wandb.Settings(start_method='fork'),
+                         tags=[hparams.task],
+                        )
+    logger.log_hyperparams(hparams)
+    logger.watch(model, log='all', log_freq=1, log_graph=True)
+    
+#     experiment = Experiment(
+#         api_key="guqtwioseJmdXw2iMRtTuxaIn",
+#         project_name="ai4trucks",
+#     )
+#     logger = CometLogger(
+#         api_key="guqtwioseJmdXw2iMRtTuxaIn",
+#         project_name="ai4trucks",
+#     )
+#     experiment.set_model_graph(str(model))
+    
 
     trainer = Trainer(
         max_epochs=hparams.max_epochs,
-        logger=comet_logger,
+        logger=logger,
         gpus=1 if torch.cuda.is_available() else 0,
         precision=16 if torch.cuda.is_available() else 32,
 #         log_every_n_steps=5,
-        default_root_dir='./logs'
+        default_root_dir='./logs',
+        gradient_clip_val=3.0,
     )
+    
+    # Run learning rate finder
+#     lr_finder = trainer.tuner.lr_find(model, early_stop_threshold=1000.0, min_lr=1e-20)
+#     fig = lr_finder.plot(suggest=True)
+#     fig.savefig(f"Images/lr_suggestion_mov.png")
+#     print(f" 🔍  Best lr found: {lr_finder.suggestion()}")
+
     trainer.fit(model)
+    return model
 
     
 if __name__ == '__main__':
@@ -97,4 +122,8 @@ if __name__ == '__main__':
             train(hparams)
     else:
         hparams.update({"plates": None, "categories": None})
-        train(hparams)
+        model = train(hparams)
+        
+#     evaluate(model)
+        
+    

@@ -275,10 +275,10 @@ class FailureDataset(Dataset):
         """
         Takes as input a dataframe with the last column as label, X features are un-normalized.
         """
-        assert data.notna().any().any()
         self.sequence_length = sequence_length
         
-        data['cycle_norm'] = data.date.copy()
+        data = data.copy()
+        data['cycle_norm'] = data.date
         sequence_cols = data.columns.difference(["plate", "date", label_col])
         # add cycle norm? Can be time, full odom or engineHour
         self.X_values = []
