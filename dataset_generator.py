@@ -24,10 +24,13 @@ fornitori = ed(Movimatica={"path": "dataset2/Movimatica_vehicles.csv",
                            "features": ["odometer", "position_speed", "engineHours", "position_ignition"],
                            "agg_funs": ["mean", "std", "min", "max", "count", "median"],
                           },
-               Visirun={"path": "dataset2/Visirun_CurrentPosition.csv",
+               Visirun=[{"path": "dataset2/Visirun_CurrentPosition.csv",
                         "features": ["odometer", "speed", "workMinutes", "heading"],
-                        "agg_funs": ["mean", "std", "min", "max", "count", "median"],
-                       },
+                        "agg_funs": ["mean", "std", "min", "max", "count", "median"],},
+                        {"path": "dataset2/Visirun_Stops.csv",
+                        "features": ["engineOnTime", "duration"],
+                        "agg_funs": ["sum", "count"],}
+                       ],
               )
 
 def set_offset(df):
@@ -77,20 +80,27 @@ def binder_dt(f_name, curr_f, debug=False, interpolate=True, get_diff=True):
         fig, ax = plt.subplots(len([feat for feat in curr_f.features if not 'speed' in feat]), 1,
                                figsize= (12,8), sharex=True
                               )
+    
+    # process hh:mm:ss in some Visirun folders --> converted to seconds
+    for f in curr_f.features:
+        if data_raw[f].dtype == "O" and data_raw[f].str.contains(":").all():
+            data_raw[f] = data_raw[f].apply(lambda s: sum([int(t)*m for t, m in zip(s.split(':'), (3600, 60, 1))]))
 
     # risolve il problema di Movimatica su EngineHours, non è necessario sugli altri
     if f_name == "Movimatica":
         data_raw = set_offset(data_raw)    
-    if f_name == "Visirun":
+    if f_name == "Visirun" and "odometer" in curr_f.features:
         data_raw.odometer /= 1e3
         data_raw["engineHours"] = data_raw.workMinutes / 60
         data_raw = data_raw.drop("workMinutes", axis=1)
         
-        old_feats = curr_f.features # it can be done better
+        old_feats = curr_f.features # this can be done better
         curr_f.features = [f for f in curr_f.features if f != "workMinutes"] + ["engineHours"]
         
     agg_features = {feat: curr_f.agg_funs for feat in curr_f.features}
-    agg_features.update({"timestamp": lambda x: x.dt.hour.max() - x.dt.hour.min()})
+    
+    if "odometer" in curr_f.features:
+        agg_features.update({"timestamp": lambda x: x.dt.hour.max() - x.dt.hour.min()})
     
     df_interpol = data_raw.groupby("plate")\
                     .resample('D')\
@@ -123,14 +133,17 @@ def binder_dt(f_name, curr_f, debug=False, interpolate=True, get_diff=True):
         
     df_interpol.columns = ['_'.join(c) for c in df_interpol.columns]
     
-    df_interpol["count"] = df_interpol[next(f for f in df_interpol.columns if 'count' in f)]
-    df_interpol = df_interpol.drop([f for f in df_interpol.columns if '_count' in f],
-                                  axis=1)
-    
-    df_interpol["daydistance"] = df_interpol.odometer_max - df_interpol.odometer_min
+    if "odometer" in curr_f.features:
+        df_interpol["count"] = df_interpol[next(f for f in df_interpol.columns if 'count' in f)]
+        df_interpol = df_interpol.drop([f for f in df_interpol.columns if '_count' in f],
+                                      axis=1)
+        df_interpol["daydistance"] = df_interpol.odometer_max - df_interpol.odometer_min
+        
 #     for worktime in ["workMinutes", "engineHours"]:
     if "engineHours" in curr_f.features:
         df_interpol["dayusage"] = df_interpol.engineHours_max - df_interpol.engineHours_min
+        if f_name == "Visirun":
+            curr_f.features = old_feats
         
     df_interpol = df_interpol.rename(columns={"timestamp_<lambda>": "sampled_timerange"})
     
@@ -138,8 +151,6 @@ def binder_dt(f_name, curr_f, debug=False, interpolate=True, get_diff=True):
         for feat in [c for c in df_interpol.columns if re.match("(odometer|engineHours)_(mean|median|max|min)", c)]:
             df_interpol[feat] = df_interpol.groupby("plate")[feat].diff()
     
-    if f_name == "Visirun":
-        curr_f.features = old_feats
     return df_interpol
 
 
@@ -219,7 +230,12 @@ def get_timeseries(dt=20, hot_period=7, single_class=True, verbose=False, use_ru
         if f_name not in limit_provider: continue
            
         print(f"  📂  Loading '{f_name}'...")
-        data = binder_dt(f_name, curr_f, debug=verbose)
+        if type(curr_f) == list:
+            data = pd.concat([binder_dt(f_name, folder, debug=verbose) for folder in curr_f],
+                             axis=1)
+        else:
+            data = binder_dt(f_name, curr_f, debug=verbose)
+    
         if limit_plate is not None:
             data = data.loc[(limit_plate, slice(None)), :]
             print(f"Only considering ({limit_plate if limit_plate is not None else 'Any'}, {limit_cat if limit_cat is not None else 'Any'})")
@@ -234,6 +250,7 @@ def get_timeseries(dt=20, hot_period=7, single_class=True, verbose=False, use_ru
         
         data["any_failure"] = data[cat_fatture.Categoria.unique()].sum(axis=1).gt(0).astype(float)
         
+        
         dataset = dataset.append(data)
 
     if single_class: 
@@ -245,8 +262,9 @@ def get_timeseries(dt=20, hot_period=7, single_class=True, verbose=False, use_ru
         print(f"{len(correlated_f)} features are excluded because too correlated with others ({correlated_f})")
     
     dataset = dataset.reset_index()
-    
+        
     dataset.date = dataset.date.factorize()[0]
+    
     with open("plates_name.json", "r") as f:
         rosetta = json.load(f)
     dataset.plate = dataset.plate.apply(lambda x: int(rosetta[x][1:]))
@@ -264,7 +282,6 @@ def get_timeseries(dt=20, hot_period=7, single_class=True, verbose=False, use_ru
         drop_cols += ["attended_failure"]
     else:
         drop_cols += ["RUL"]
-    
     
 #     drop_cols += ["plate", "date"] # This is ok, but keep odom or engH as lifecycle (in the case normalized)
     return dataset[(c for c in dataset.columns if c not in drop_cols)].fillna(0)

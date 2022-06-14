@@ -19,7 +19,7 @@ targhe = [
 "FY293YC", "FY295YC", "FY298YC", "FY294YC", "FY296YC", "FV903SK", "FV904SK", "FV906SK", "FV907SK", "FV908SK", "FZ330SC", "FV913SK", "FV914SK", "FY402YC", "FY403YC", "ZB477AN", "ZB473AN", "ZB474AN", "ZB476AN", "ZB475AN", "ZB478AN", "ZB137AR", "ZB139AR", "ZB150AR", "ZB127AR", "ZB132AR", "ZB128AR", "ZB131AR", "ZB130AR", "FY400YC", "ZB135AR", "ZB136AR", "ZB134AR", "ZB373AN", "FY401YC", "CW363HC", "CW367HC", "FP698BP", "FP699BP", "CW365HC", "CW368HC", "CN433CA", "FV989FV", "FV990FV", "FV991FV", "FV995FV", "FV996FV", "FV997FV", "FV992FV", "FV985FV", "FV987FV", "FV988FV", "FV993FV", "FV994FV", "EG181YE", "FV986FV", "EN971TN", "FY299YC", 
 ]
 
-timestamp_names = ["transaction_date", "Data", "creationDate", "position_timestamp", "snapshot_date_time", "PositionDateTime", "StartDate", "dateDay", "datestamp", "timestampCall", "DataTransazione", "start_timestamp"]
+timestamp_names = ["date", "transaction_date", "Data", "creationDate", "position_timestamp", "snapshot_date_time", "PositionDateTime", "StartDate", "dateDay", "datestamp", "timestampCall", "DataTransazione", "start_timestamp"]
 plate_names = ["license_plate", "LicensePlate", "vehiclePlate", "TruckPlate", "Targa", "registration_number"]
 
 veicoli = pd.read_excel("excels/SEA_Flotta_Elenco_Veicoli.xlsx", skiprows=lambda x: x > 341) # il file contiene altre cose dopo
